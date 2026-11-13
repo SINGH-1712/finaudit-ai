@@ -185,7 +185,7 @@ def _hit(
     source: str = FlagSource.RULE.value,
 ) -> Dict[str, Any]:
     penalty = PENALTY_CRITICAL if severity == Severity.CRITICAL.value else PENALTY_WARNING
-    if severity not in (Severity.CRITICAL.value, Severity.WARNING.value):
+    if severity not in (Severity.INFO.value, Severity.LOW.value, Severity.MEDIUM.value, Severity.HIGH.value, Severity.CRITICAL.value):
         penalty = 0.0
     return {
         "rule_code": code,
@@ -273,7 +273,7 @@ def evaluate_rules(invoice: Invoice, peers: Sequence[Invoice]) -> List[Dict[str,
             if tags:
                 why = f"{why}; keyword tags: {', '.join(tags)}"
             hits.append(_hit(
-                RULE_ITC, Severity.WARNING.value,
+                RULE_ITC, Severity.MEDIUM.value,
                 "Input tax credit looks blocked",
                 f"Food, restaurant, club or personal-use indicators ({why}). "
                 "ITC on this expense should not be claimed without a documented statutory exception.",
@@ -287,7 +287,7 @@ def evaluate_rules(invoice: Invoice, peers: Sequence[Invoice]) -> List[Dict[str,
         fee = _fee_amount(invoice)
         if section and fee > TDS_SINGLE_LIMIT:
             hits.append(_hit(
-                RULE_TDS, Severity.WARNING.value,
+                RULE_TDS, Severity.MEDIUM.value,
                 f"TDS threshold crossed under section {section}",
                 f"{invoice.ledger_category} of ₹{fee:,.2f} is above ₹{TDS_SINGLE_LIMIT:,.0f}. "
                 f"Confirm that tax was deducted under section {section} before the books are signed off.",
@@ -332,7 +332,7 @@ def evaluate_rules(invoice: Invoice, peers: Sequence[Invoice]) -> List[Dict[str,
         diff = _round2(abs(expected - actual))
         if diff > GST_MATH_TOLERANCE:
             hits.append(_hit(
-                RULE_GST_MATH, Severity.WARNING.value,
+                RULE_GST_MATH, Severity.MEDIUM.value,
                 "GST amount does not match the rate",
                 f"Taxable value ₹{float(invoice.base_amount):,.2f} × {float(invoice.gst_rate):g}% "
                 f"= ₹{expected:,.2f}, but GST recorded is ₹{actual:,.2f} (difference ₹{diff:,.2f}, tolerance ₹{GST_MATH_TOLERANCE:,.0f}).",
@@ -581,7 +581,7 @@ def build_audit_summary(invoices: Iterable[Invoice]) -> Dict[str, Any]:
             issues.append(_issue_dict(row, flag))
             if not flag.is_resolved:
                 severity_counts[flag.severity] += 1
-    rank = {Severity.CRITICAL.value: 0, Severity.HIGH.value: 1, Severity.MEDIUM.value: 2, Severity.WARNING.value: 3, Severity.LOW.value: 4, Severity.INFO.value: 5}
+    rank = {Severity.CRITICAL.value: 0, Severity.HIGH.value: 1, Severity.MEDIUM.value: 2, Severity.MEDIUM.value: 3, Severity.LOW.value: 4, Severity.INFO.value: 5}
     issues.sort(key=lambda item: (item["is_resolved"], rank.get(item["severity"], 9), item["invoice_id"], item["id"] or 0))
 
     cash: Dict[str, Dict[str, float]] = defaultdict(lambda: {"sales": 0.0, "expenses": 0.0})
@@ -633,7 +633,7 @@ def build_audit_summary(invoices: Iterable[Invoice]) -> Dict[str, Any]:
         "net_gst_payable": _round2(output_gst - eligible_itc),
         "anomaly_count": sum(1 for row in rows if row.is_anomaly),
         "critical_count": severity_counts.get(Severity.CRITICAL.value, 0),
-        "warning_count": severity_counts.get(Severity.WARNING.value, 0),
+        "warning_count": severity_counts.get(Severity.MEDIUM.value, 0),
         "blocked_itc_count": sum(1 for row in rows if row.is_blocked_itc),
         "pending_review": pending,
         "flags_by_severity": dict(severity_counts),
