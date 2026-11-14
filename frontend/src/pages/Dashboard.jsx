@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Wallet, Receipt, ShieldAlert, Ban, Clock, Percent } from 'lucide-react'
+import { Wallet, Receipt, ShieldAlert, Ban, Clock, Percent,
+         TrendingUp, Brain, Loader2 } from 'lucide-react'
 import { api } from '../api/client'
+import { aiAddons } from '../api/aiAddons'                  // NEW
 import { inr, score } from '../utils/format'
 import { useApp } from '../context/AppContext'
 import StatCard from '../components/StatCard'
@@ -12,12 +14,35 @@ export default function Dashboard() {
   const [s, setS] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  // ── NEW: AI add-on state ─────────────────────────────────────────────
+  const [forecast, setForecast] = useState(null)
+  const [retrain, setRetrain] = useState(null)
+  const [retraining, setRetraining] = useState(false)
+
   const load = useCallback(() => {
     setLoading(true)
     api.auditSummary().then(setS).catch((e) => toast(e.message, 'error')).finally(() => setLoading(false))
   }, [toast])
 
   useEffect(load, [load])
+
+  // ── NEW: load forecast once ──────────────────────────────────────────
+  useEffect(() => {
+    aiAddons.forecast().then(setForecast).catch((e) => console.warn('forecast:', e.message))
+  }, [])
+
+  const runRetrain = async () => {
+    setRetraining(true)
+    try {
+      const res = await aiAddons.retrainClassifier()
+      setRetrain(res)
+      toast(`Classifier retrained — val accuracy ${res.validation_accuracy_pct.toFixed(1)}%`, 'success')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setRetraining(false)
+    }
+  }
 
   if (loading) return <Spinner label="Loading dashboard…" />
   if (!s) return null
@@ -26,6 +51,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {/* ── existing header ── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">Overview</h2>
@@ -34,6 +60,7 @@ export default function Dashboard() {
         <button className="btn-ghost" onClick={load}>Refresh</button>
       </div>
 
+      {/* ── existing readiness + stat grid ── */}
       <div className="grid gap-4 xl:grid-cols-3">
         <div className="card p-5 xl:col-span-1">
           <p className="text-sm text-slate-500">Audit readiness</p>
@@ -115,6 +142,101 @@ export default function Dashboard() {
             ))}
         </div>
       </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          NEW: AI PREDICTIVE FORECAST
+      ───────────────────────────────────────────────────────────── */}
+      <div className="card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="flex items-center gap-2 font-medium">
+              <TrendingUp className="h-4 w-4 text-brand-600" />
+              AI Cash-Flow &amp; GST Forecast
+            </p>
+            <p className="text-xs text-slate-500">
+              {forecast?.forecast
+                ? `LinearRegression on ${forecast.forecast.n_months} months · ${forecast.forecast.confidence} confidence`
+                : 'Computing…'}
+            </p>
+          </div>
+          {forecast?.forecast && (
+            <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-700">
+              Next: {forecast.forecast.month}
+            </span>
+          )}
+        </div>
+
+        {!forecast ? (
+          <p className="mt-3 text-sm text-slate-500">Loading forecast…</p>
+        ) : !forecast.forecast ? (
+          <p className="mt-3 text-sm text-slate-500">{forecast.note}</p>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <ForecastMetric label="Expected Sales"    value={inr(forecast.forecast.sales)}    tone="emerald" />
+              <ForecastMetric label="Expected Expenses" value={inr(forecast.forecast.expenses)} tone="rose" />
+              <ForecastMetric label="Output GST"        value={inr(forecast.forecast.output_gst)} tone="amber" />
+              <ForecastMetric label="Net GST Payable"   value={inr(forecast.forecast.net_gst)}  tone="brand" highlight />
+            </div>
+            <p className="mt-3 text-xs text-slate-500">{forecast.note}</p>
+          </>
+        )}
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          NEW: ACTIVE LEARNING RETRAIN
+      ───────────────────────────────────────────────────────────── */}
+      <div className="card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 font-medium">
+              <Brain className="h-4 w-4 text-brand-600" />
+              Active Learning · Retrain Classifier
+            </p>
+            <p className="text-xs text-slate-500">
+              Retrain the ledger classifier using CA-verified labels (CLEARED / DISALLOWED / manual overrides).
+            </p>
+          </div>
+          <button className="btn-primary !py-1.5" disabled={retraining} onClick={runRetrain}>
+            {retraining
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Training…</>
+              : <><Brain className="h-4 w-4" /> Retrain Classifier</>}
+          </button>
+        </div>
+
+        {retrain && (
+          <div className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+            <p className="font-medium">✓ {retrain.note}</p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
+              <span>Samples: <b>{retrain.n_samples}</b></span>
+              <span>Verified: <b>{retrain.n_verified}</b></span>
+              <span>Val. acc: <b>{retrain.validation_accuracy_pct.toFixed(1)}%</b></span>
+              <span>Mode: <b>{retrain.data_mode}</b></span>
+              <span className="col-span-2 md:col-span-4">Classes: <b>{retrain.classes.join(', ')}</b></span>
+              <span className="col-span-2 md:col-span-4 text-emerald-700">
+                Activation: {retrain.activation === 'loaded_in_memory'
+                  ? 'hot-swapped in memory ✓'
+                  : 'restart backend to activate'}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ForecastMetric({ label, value, tone, highlight }) {
+  const tones = {
+    emerald: 'bg-emerald-50 text-emerald-700',
+    rose:    'bg-rose-50 text-rose-700',
+    amber:   'bg-amber-50 text-amber-700',
+    brand:   'bg-brand-50 text-brand-700',
+  }
+  return (
+    <div className={`rounded-lg p-3 ${highlight ? tones[tone] + ' ring-2 ring-brand-300' : tones[tone]}`}>
+      <p className="text-[10px] uppercase tracking-wide opacity-70">{label}</p>
+      <p className="mt-1 text-lg font-semibold">{value}</p>
     </div>
   )
 }

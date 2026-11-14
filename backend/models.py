@@ -106,6 +106,10 @@ class Invoice(Base):
     vendor_id: Mapped[Optional[int]] = mapped_column(ForeignKey("vendors.id", ondelete="SET NULL"))
     vendor_name: Mapped[Optional[str]] = mapped_column(String(255), index=True)
     vendor_gstin: Mapped[Optional[str]] = mapped_column(String(15))
+    # ── NEW: HSN/SAC & GSTIN status ──
+    hsn_code: Mapped[Optional[str]] = mapped_column(String(8))
+    vendor_gstin_status: Mapped[Optional[str]] = mapped_column(String(20))  # Active|Cancelled|Composition|Invalid|Unknown
+    # ── end new ──
     gstin_valid: Mapped[Optional[bool]] = mapped_column(Boolean)  # modulo-36 checksum result
     gstin_state_code: Mapped[Optional[str]] = mapped_column(String(2))
     buyer_gstin: Mapped[Optional[str]] = mapped_column(String(15))

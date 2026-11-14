@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 import Toasts from './Toasts'
+import LedgerCopilot from './LedgerCopilot' 
 
 export default function Layout() {
   return (
@@ -12,6 +13,7 @@ export default function Layout() {
         <main className="flex-1 overflow-y-auto p-6"><Outlet /></main>
       </div>
       <Toasts />
+      <LedgerCopilot />  
     </div>
   )
 }

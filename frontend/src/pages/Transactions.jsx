@@ -32,7 +32,18 @@ export default function Transactions() {
   const columns = [
     { key: 'id', header: '#', render: (r) => <span className="font-mono text-xs">{r.id}</span> },
     { key: 'entry_type', header: 'Type', render: (r) => <Badge tone={r.entry_type === 'SALE' ? 'success' : 'info'}>{r.entry_type}</Badge> },
-    { key: 'vendor', header: 'Party', render: (r) => r.vendor_name || '—' },
+    { key: 'vendor', header: 'Party', render: (r) => (
+      <div>
+        <div>{r.vendor_name || '—'}</div>
+        {r.vendor_gstin_status && r.vendor_gstin_status !== 'Active' && (
+          <span className={`mt-0.5 inline-block rounded px-1.5 py-0.5 text-[10px] ${
+            r.vendor_gstin_status === 'Cancelled' || r.vendor_gstin_status === 'Invalid'
+              ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+            {r.vendor_gstin_status}
+          </span>
+        )}
+      </div>
+    ) },
     { key: 'inv', header: 'Invoice', render: (r) => <span className="font-mono text-xs">{r.invoice_no || '—'}</span> },
     { key: 'date', header: 'Date', render: (r) => dateOnly(r.invoice_date) },
     { key: 'total', header: 'Total', render: (r) => inr(r.total_amount) },
@@ -42,6 +53,9 @@ export default function Transactions() {
         <p className="truncate">{r.ledger_category || '—'}</p>
         {r.ledger_confidence != null && <p className="text-xs text-slate-500">{pct(r.ledger_confidence)}</p>}
       </div>
+    ) },
+    { key: 'hsn', header: 'HSN/SAC', render: (r) => (
+      <span className="font-mono text-xs">{r.hsn_code || '—'}</span>
     ) },
     { key: 'score', header: 'Audit', render: (r) => (
       <div className="flex items-center gap-1">

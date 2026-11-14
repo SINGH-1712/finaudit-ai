@@ -534,6 +534,8 @@ _HEADER_SKIP = re.compile(r"tax\s*invoice|invoice|bill\s*of\s*supply|cash\s*memo
                           r"address|\bph[:.]|welcome|thank", re.I)
 _INV_NO = re.compile(r"(?:tax\s*invoice|invoice|inv|bill|receipt|voucher|memo)\s*(?:no|number|num|#)\.?\s*[:\-#]?\s*"
                      r"([A-Z0-9][A-Z0-9\-/]{2,24})", re.I)
+_HSN_CONTEXT = re.compile(r"\b(?:hsn(?:\s*/\s*sac)?|sac(?:\s*code)?|hsn\s*code|tariff)\b", re.I)
+_HSN_VALUE = re.compile(r"\b(\d{4}(?:\d{2})?(?:\d{2})?)\b")
 _SLABS = (0.0, 0.25, 3.0, 5.0, 12.0, 18.0, 28.0)
 
 
@@ -697,7 +699,22 @@ class FieldExtractor:
                     nums = [n for n in numbers_in_line(ln.text) if abs(n - float(pct.group(1))) > 1e-9]
                     return float(pct.group(1)), (nums[-1] if nums else None), ln.conf
         return None
-
+    # ---- HSN / SAC ---------------------------------------------------------
+    def _find_hsn_code(self, lines: List[OCRLine]) -> Optional[FieldValue]:
+        # (a) labelled line: "HSN: 8471", "SAC Code 998311", "HSN/SAC - 9983"
+        for ln in lines:
+            if _HSN_CONTEXT.search(ln.text):
+                m = _HSN_VALUE.search(ln.text)
+                if m:
+                    code = m.group(1)
+                    if len(code) in (4, 6, 8):
+                        return FieldValue(code, ln.conf, "regex")
+        # (b) fallback: line-items already extracted by _ITEM_FULL
+        for item in self._find_line_items(lines):
+            hsn = item.get("hsn_sac")
+            if hsn and len(str(hsn)) in (4, 6, 8):
+                return FieldValue(str(hsn), 0.75, "derived")
+        return None
     # ---- Payment mode ------------------------------------------------------
     def _find_payment_mode(self, lines: List[OCRLine]) -> Optional[FieldValue]:
         patterns = [
@@ -799,6 +816,7 @@ class FieldExtractor:
         res.put("invoice_no", self._find_invoice_no(lines))
         res.put("vendor_name", self._find_vendor(lines))
         res.put("payment_mode", self._find_payment_mode(lines))
+        res.put("hsn_code", self._find_hsn_code(lines))
         res.put("total_amount", self._find_total(lines))
         res.put("base_amount", self._find_base(lines))
 
@@ -947,7 +965,7 @@ def _result_dict(lines: List[OCRLine], tokens: List[OCRToken], engine_name: str,
     extracted = {k: ext.fields.get(k) for k in (
         "vendor_name", "vendor_gstin", "gstin_valid", "gstin_state_code", "gstin_state_name", "buyer_gstin",
         "invoice_no", "invoice_date", "base_amount", "gst_rate", "cgst_amount", "sgst_amount", "igst_amount",
-        "gst_amount", "total_amount", "payment_mode")}
+        "gst_amount", "total_amount", "payment_mode", "hsn_code")}
     warnings = list(prep.warnings) + ext.warnings
     mean_conf = float(np.mean(confs))
     if mean_conf < 0.6:

@@ -187,6 +187,8 @@ def _voucher_xml(txn: Any, index: int) -> str:
     number = _get(txn, "invoice_no") or f"FA-{index:04d}"
     remote = f"finaudit-{_get(txn, 'id') or index}"
     gstin_xml = f"\n    <PARTYGSTIN>{_xml(gstin)}</PARTYGSTIN>" if gstin else ""
+    hsn = _get(txn, "hsn_code")
+    hsn_xml = f"\n     <HSNCODE>{_xml(hsn)}</HSNCODE>" if hsn else ""
     return (
         f"   <TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n"
         f"    <VOUCHER VCHTYPE=\"{_xml(vch_type)}\" ACTION=\"Create\" OBJVIEW=\"Invoice Voucher View\" REMOTEID=\"{_xml(remote)}\">\n"
@@ -194,7 +196,7 @@ def _voucher_xml(txn: Any, index: int) -> str:
         f"     <VOUCHERTYPENAME>{vch_type}</VOUCHERTYPENAME>\n"
         f"     <VOUCHERNUMBER>{_xml(number)}</VOUCHERNUMBER>\n"
         f"     <PARTYLEDGERNAME>{_xml(party)}</PARTYLEDGERNAME>"
-        f"{gstin_xml}\n"
+        f"{gstin_xml}{hsn_xml}\n"
         f"     <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>\n"
         f"     <ISINVOICE>Yes</ISINVOICE>\n"
         f"     <NARRATION>{_xml(narration)}</NARRATION>\n"
@@ -268,6 +270,7 @@ def _sales_row(txn: Any) -> Dict[str, Any]:
         "Invoice Value": _num(_get(txn, "total_amount")) or round(_base_amount(txn, tax) + tax["cgst"] + tax["sgst"] + tax["igst"], 2),
         "ML Category": _text(_get(txn, "ledger_category")),
         "ML Confidence %": _confidence_pct(txn),
+        "HSN/SAC Code": _text(_get(txn, "hsn_code")), 
     }
 
 
@@ -287,6 +290,7 @@ def _itc_row(txn: Any) -> Dict[str, Any]:
         "GST Amount": gst or _num(_get(txn, "gst_amount")),
         "Invoice Value": _num(_get(txn, "total_amount")),
         "ITC Eligible": "Yes",
+        "HSN/SAC Code": _text(_get(txn, "hsn_code")), 
     }
 
 
@@ -428,11 +432,11 @@ def generate_gst_excel(transactions: Sequence[Any], audit_results: Any) -> bytes
 
     sales_columns = [
         "Invoice Date", "Invoice Number", "Customer Name", "Customer GSTIN", "Place of Supply",
-        "Taxable Value", "GST Rate %", "CGST", "SGST", "IGST", "Invoice Value", "ML Category", "ML Confidence %",
+        "Taxable Value", "GST Rate %", "CGST", "SGST", "IGST", "Invoice Value", "ML Category", "ML Confidence %", "HSN/SAC Code",
     ]
     itc_columns = [
         "Invoice Date", "Invoice Number", "Vendor Name", "Vendor GSTIN", "Ledger Category",
-        "ML Confidence %", "Payment Mode", "Taxable Value", "GST Rate %", "GST Amount", "Invoice Value", "ITC Eligible",
+        "ML Confidence %", "Payment Mode", "Taxable Value", "GST Rate %", "GST Amount", "Invoice Value", "ITC Eligible", "HSN/SAC Code",
     ]
     flag_columns = [
         "Severity", "Source", "Rule Code", "Legal Reference", "Invoice Number", "Party Name", "Entry Type",

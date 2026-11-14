@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { Upload, Save, RotateCcw, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { api } from '../api/client'
+import { verifyGstin } from '../api/gstin'
 import { useApp } from '../context/AppContext'
 import { inr, PAYMENT_MODES, pct } from '../utils/format'
 import Modal from '../components/Modal'
@@ -9,7 +10,7 @@ const BLANK = {
   entry_type: 'EXPENSE', vendor_name: '', vendor_gstin: '', buyer_gstin: '',
   invoice_no: '', invoice_date: '', base_amount: '', gst_rate: '', cgst_amount: '',
   sgst_amount: '', igst_amount: '', gst_amount: '', total_amount: '', payment_mode: '',
-  ledger_category: '',
+  ledger_category: '', hsn_code: '',
 }
 
 export default function ScanReceipt() {
@@ -20,6 +21,19 @@ export default function ScanReceipt() {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [saving, setSaving] = useState(false)
+    const [gstinStatus, setGstinStatus] = useState(null)
+  const [verifying, setVerifying] = useState(false)
+
+  const checkGstin = async () => {
+    if (!form.vendor_gstin) return
+    setVerifying(true)
+    try {
+      const res = await verifyGstin(form.vendor_gstin)
+      setGstinStatus(res)
+      toast(`${res.status} · ${res.state_name || res.state_code || '—'}`, res.status === 'Active' ? 'success' : 'error')
+    } catch (e) { toast(e.message, 'error') }
+    finally { setVerifying(false) }
+  }
 
   const onFile = async (e) => {
     const file = e.target.files?.[0]
@@ -81,6 +95,7 @@ export default function ScanReceipt() {
         gst_amount: num(form.gst_amount),
         total_amount: num(form.total_amount),
         payment_mode: form.payment_mode || null,
+        hsn_code: form.hsn_code || null,
         ledger_category: form.ledger_category || null,
         raw_text: preview.raw_text || null,
         line_items: (preview.line_items || []).map((li) => ({
@@ -191,7 +206,25 @@ function ScanReview({ preview, form, setForm, onSave, saving }) {
             </select>
           </Field>
           <Field label="Vendor name"><input className="input" value={form.vendor_name} onChange={set('vendor_name')} /></Field>
-          <Field label="Vendor GSTIN"><input className="input font-mono" value={form.vendor_gstin} onChange={set('vendor_gstin')} /></Field>
+          <Field label="Vendor GSTIN">
+            <div className="flex gap-2">
+              <input className="input font-mono flex-1" value={form.vendor_gstin} onChange={set('vendor_gstin')} />
+              <button type="button" className="btn-ghost !px-2 !py-1 text-xs"
+                disabled={!form.vendor_gstin || verifying} onClick={checkGstin}>
+                {verifying ? '…' : 'Verify'}
+              </button>
+            </div>
+            {gstinStatus && (
+              <div className={`mt-1 rounded px-2 py-1 text-xs ${
+                gstinStatus.status === 'Active' ? 'bg-emerald-50 text-emerald-700'
+                : gstinStatus.status === 'Cancelled' || gstinStatus.status === 'Invalid' ? 'bg-red-50 text-red-700'
+                : 'bg-amber-50 text-amber-700'}`}>
+                <b>{gstinStatus.status}</b>
+                {gstinStatus.state_name && ` · ${gstinStatus.state_name}`}
+                {gstinStatus.entity_type && ` · ${gstinStatus.entity_type}`}
+              </div>
+            )}
+          </Field>
           <Field label="Buyer GSTIN"><input className="input font-mono" value={form.buyer_gstin} onChange={set('buyer_gstin')} /></Field>
           <Field label="Invoice No."><input className="input" value={form.invoice_no} onChange={set('invoice_no')} /></Field>
           <Field label="Invoice date"><input type="date" className="input" value={form.invoice_date || ''} onChange={set('invoice_date')} /></Field>
@@ -210,6 +243,10 @@ function ScanReview({ preview, form, setForm, onSave, saving }) {
           </Field>
           <Field label="Ledger category override">
             <input className="input" value={form.ledger_category} onChange={set('ledger_category')} placeholder="Leave blank to keep ML label" />
+          </Field>
+          <Field label="HSN / SAC Code">
+            <input className="input font-mono" value={form.hsn_code}
+              onChange={set('hsn_code')} placeholder="4, 6 or 8 digits (e.g. 9983)" />
           </Field>
         </div>
       </div>

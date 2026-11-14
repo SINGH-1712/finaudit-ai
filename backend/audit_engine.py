@@ -32,6 +32,7 @@ from ml_engine import (
 )
 from models import AuditFlag, FlagSource, Invoice, ReviewStatus, Severity
 from ocr_pipeline import validate_gstin
+from gstin_service import verify_gstin
 
 # Points removed from one invoice's readiness score.
 PENALTY_CRITICAL = 22.0
@@ -58,6 +59,17 @@ RULE_DUPLICATE = "DUPLICATE_INVOICE"
 RULE_MISSING = "MISSING_INVOICE"
 RULE_GST_MATH = "GST_MATH"
 RULE_ML = "ML_ANOMALY"
+# ── new ──
+RULE_HSN_MISSING = "HSN_MISSING"
+RULE_HSN_MISMATCH = "HSN_RATE_MISMATCH"
+RULE_GSTIN_CANCELLED = "GSTIN_CANCELLED"
+RULE_GSTIN_COMPOSITION = "GSTIN_COMPOSITION"
+
+HSN_MANDATORY_THRESHOLD = 100_000.0  # B2B invoices above this must show HSN/SAC
+_HSN_STANDARD_RATES = {
+    "9981": 18.0, "9982": 18.0, "9983": 18.0, "9984": 18.0, "9985": 18.0,
+    "8471": 18.0, "8517": 18.0, "9403": 18.0, "4901": 0.0,
+}
 
 
 def _round2(value: float) -> float:
@@ -115,15 +127,24 @@ def normalise_totals(invoice: Invoice) -> None:
 
 
 def apply_gstin_metadata(invoice: Invoice) -> None:
-    """Persist the checksum result for the GSTIN that matters on this voucher."""
+    """Persist the checksum result + registration status for the GSTIN that matters."""
     raw = _party_gstin(invoice)
     if not raw:
         invoice.gstin_valid = False if (invoice.entry_type == "EXPENSE" and (invoice.gst_amount or 0) > 0) else None
+        invoice.vendor_gstin_status = None
         return
     result = validate_gstin(raw)
     invoice.gstin_valid = bool(result.is_valid)
     if result.state_code:
         invoice.gstin_state_code = result.state_code
+    # NEW: decode + look up registration status (offline registry or live API)
+    if invoice.entry_type == "EXPENSE" and result.is_valid:
+        try:
+            invoice.vendor_gstin_status = verify_gstin(raw).status
+        except Exception:  # noqa: BLE001 — never break audit_books on lookup failure
+            invoice.vendor_gstin_status = None
+    else:
+        invoice.vendor_gstin_status = None
 
 
 def classify_invoice(invoice: Invoice) -> Dict[str, Any]:
@@ -243,6 +264,29 @@ def evaluate_rules(invoice: Invoice, peers: Sequence[Invoice]) -> List[Dict[str,
                         "reason": checked.reason,
                     },
                 ))
+        # ── HSN / SAC compliance (B2B) ──────────────────────────────
+        amount = _amount(invoice)
+        hsn = (invoice.hsn_code or "").strip()
+        if not hsn and amount >= HSN_MANDATORY_THRESHOLD:
+            hits.append(_hit(
+                RULE_HSN_MISSING, Severity.MEDIUM.value,
+                "HSN/SAC code missing on high-value B2B invoice",
+                f"HSN/SAC is mandatory on all B2B tax invoices (CBIC Notification 78/2020). "
+                f"Invoice value ₹{amount:,.0f} exceeds the ₹{HSN_MANDATORY_THRESHOLD:,.0f} threshold.",
+                "CGST Rules, rule 46(g) — HSN/SAC on tax invoice",
+                {"amount": amount, "threshold": HSN_MANDATORY_THRESHOLD},
+            ))
+        elif hsn and invoice.gst_rate is not None:
+            expected = _HSN_STANDARD_RATES.get(hsn[:4])
+            if expected is not None and abs(float(invoice.gst_rate) - expected) > 0.1:
+                hits.append(_hit(
+                    RULE_HSN_MISMATCH, Severity.MEDIUM.value,
+                    "HSN/SAC code and GST rate mismatch",
+                    f"HSN/SAC {hsn} typically attracts {expected:.0f}% GST, but this invoice records {invoice.gst_rate:g}%.",
+                    "CBIC rate notification read with HSN classification",
+                    {"hsn_code": hsn, "expected_rate": expected, "recorded_rate": invoice.gst_rate},
+                ))
+
 
     if entry == "EXPENSE" and (invoice.payment_mode or "").upper() == "CASH" and _amount(invoice) > CASH_DISALLOWANCE_LIMIT:
         paid = _amount(invoice)
@@ -256,6 +300,32 @@ def evaluate_rules(invoice: Invoice, peers: Sequence[Invoice]) -> List[Dict[str,
         ))
 
     if entry == "EXPENSE":
+        # ── GSTIN registration status (Cancelled / Composition → ITC ineligible) ──
+        if raw_v := (invoice.vendor_gstin or "").strip():
+            try:
+                v = verify_gstin(raw_v)
+                if v.status == "Cancelled":
+                    hits.append(_hit(
+                        RULE_GSTIN_CANCELLED, Severity.CRITICAL.value,
+                        "Vendor GSTIN is cancelled",
+                        f"Vendor {invoice.vendor_name or '(unknown)'} GSTIN {raw_v} is cancelled. "
+                        "ITC on this purchase is ineligible.",
+                        "CGST Act s.16(2)(a) — supplier must be a registered, active taxpayer",
+                        {"gstin": raw_v, "status": "Cancelled", "state": v.state_name,
+                         "cancellation_date": v.cancellation_date},
+                    ))
+                elif v.status == "Composition":
+                    hits.append(_hit(
+                        RULE_GSTIN_COMPOSITION, Severity.CRITICAL.value,
+                        "Vendor is a composition-scheme taxpayer",
+                        f"Vendor {invoice.vendor_name or '(unknown)'} GSTIN {raw_v} is under composition scheme. "
+                        "Composition suppliers cannot charge GST — ITC is not available.",
+                        "CGST Act s.10(4) — composition supplier cannot collect tax",
+                        {"gstin": raw_v, "status": "Composition", "state": v.state_name},
+                    ))
+            except Exception:  # noqa: BLE001
+                pass
+        # ── existing ITC / TDS logic below ── 
         blob = " ".join(filter(None, [
             invoice.vendor_name,
             invoice.raw_text,

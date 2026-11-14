@@ -52,6 +52,7 @@ class ExtractedFields(BaseModel):
     gst_amount: Optional[float] = None
     total_amount: Optional[float] = None
     payment_mode: Optional[str] = None
+    hsn_code: Optional[str] = None
 
 
 class LineItemBase(BaseModel):
@@ -135,6 +136,7 @@ class InvoiceUpdate(BaseModel):
     gst_amount: Optional[float] = Field(default=None, ge=0)
     total_amount: Optional[float] = Field(default=None, ge=0)
     payment_mode: Optional[str] = None
+    hsn_code: Optional[str] = Field(default=None, max_length=8)
     ledger_category: Optional[str] = None
     entry_type: Optional[Literal["SALE", "EXPENSE"]] = None
 
@@ -213,6 +215,7 @@ class InvoiceCreate(BaseModel):
     gst_amount: Optional[float] = Field(default=None, ge=0)
     total_amount: Optional[float] = Field(default=None, ge=0)
     payment_mode: Optional[str] = None
+    hsn_code: Optional[str] = Field(default=None, max_length=8)
     ledger_category: Optional[str] = Field(
         default=None,
         description="Set when a human overrides the classifier. Omit to keep the model label.",
@@ -258,6 +261,7 @@ class InvoiceListItem(ORMModel):
     total_amount: Optional[float] = None
     gst_amount: Optional[float] = None
     payment_mode: Optional[str] = None
+    hsn_code: Optional[str] = None
     ledger_category: Optional[str] = None
     ledger_confidence: Optional[float] = None
     ocr_mean_confidence: Optional[float] = None
@@ -298,7 +302,8 @@ class InvoiceRead(ORMModel):
     gst_amount: Optional[float] = None
     total_amount: Optional[float] = None
     payment_mode: Optional[str] = None
-
+    hsn_code: Optional[str] = None
+    vendor_gstin_status: Optional[str] = None
     ledger_category: Optional[str] = None
     ledger_confidence: Optional[float] = None
     ledger_alternatives: Optional[List[Dict[str, Any]]] = None
@@ -327,6 +332,24 @@ class InvoiceRead(ORMModel):
 class StatusUpdate(BaseModel):
     status: ReviewStatus
 
+# --------------------------------------------------------------------------
+# GSTIN verification (Feature 2)
+# --------------------------------------------------------------------------
+class GSTINVerification(BaseModel):
+    gstin: str
+    is_format_valid: bool
+    is_checksum_valid: bool
+    state_code: Optional[str] = None
+    state_name: Optional[str] = None
+    entity_type: Optional[str] = None
+    pan: Optional[str] = None
+    status: str = "Unknown"  # Active | Cancelled | Composition | Suspended | Invalid | Unknown
+    legal_name: Optional[str] = None
+    trade_name: Optional[str] = None
+    registration_date: Optional[str] = None
+    cancellation_date: Optional[str] = None
+    source: str = "offline"  # offline | live_api
+    message: Optional[str] = None
 
 # --------------------------------------------------------------------------
 # Dashboard / MLOps

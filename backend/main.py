@@ -9,6 +9,10 @@ is empty, then seeds fifteen Indian vouchers when the database has no invoices.
 """
 from __future__ import annotations
 
+from ai_addons import router as ai_addons_router
+from gstin_service import verify_gstin
+from schemas import GSTINVerification 
+
 import hashlib
 import logging
 from contextlib import asynccontextmanager
@@ -298,11 +302,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(ai_addons_router)
 
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok", "service": "FinAudit-AI"}
 
+@app.get("/api/verify-gstin/{gstin}", response_model=GSTINVerification)
+def verify_gstin_endpoint(gstin: str) -> GSTINVerification:
+    """Decode + verify a 15-char Indian GSTIN.
+
+    Uses a live third-party API when GST_API_KEY is set, otherwise the built-in
+    offline registry. Always returns 200 with `status` in
+    {Active, Cancelled, Composition, Suspended, Invalid, Unknown}.
+    """
+    return verify_gstin(gstin)
 
 @app.post("/api/scan-receipt")
 async def scan_receipt(file: UploadFile = File(...), db: Session = Depends(get_db)) -> dict:
