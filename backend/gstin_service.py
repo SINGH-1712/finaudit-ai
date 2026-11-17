@@ -117,18 +117,13 @@ def verify_gstin(gstin: str) -> GSTINVerification:
     checked = validate_gstin(gstin)
 
     # 1. Fail fast on format / checksum — no lookup needed
-    if not checked.is_format_valid:
+    if not checked.is_valid:
+        is_fmt = len(checked.gstin) == 15
         return GSTINVerification(
-            gstin=checked.gstin, is_format_valid=False, is_checksum_valid=False,
-            status="Invalid", source="offline",
-            message=checked.reason or "Invalid GSTIN format",
-        )
-    if not checked.is_checksum_valid:
-        return GSTINVerification(
-            gstin=checked.gstin, is_format_valid=True, is_checksum_valid=False,
+            gstin=checked.gstin, is_format_valid=is_fmt, is_checksum_valid=False,
             state_code=checked.state_code, state_name=checked.state_name,
             status="Invalid", source="offline",
-            message=checked.reason or "Checksum failed",
+            message=checked.reason or "Invalid GSTIN format or checksum",
         )
 
     # 2. Decode

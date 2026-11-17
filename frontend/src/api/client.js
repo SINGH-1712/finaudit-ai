@@ -16,6 +16,7 @@ http.interceptors.response.use(
 export const api = {
   // GET /api/health → { status, service }
   health: () => http.get('/health').then((r) => r.data),
+  verifyGstin: (gstin) => http.get(`/verify-gstin/${encodeURIComponent(gstin.trim().toUpperCase())}`).then((r) => r.data),
 
   // POST /api/scan-receipt (multipart field: file) → ProcessingResult-shaped dict
   scanReceipt: (file, onProgress) => {

@@ -21,7 +21,7 @@ export default function ScanReceipt() {
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [saving, setSaving] = useState(false)
-    const [gstinStatus, setGstinStatus] = useState(null)
+  const [gstinStatus, setGstinStatus] = useState(null)
   const [verifying, setVerifying] = useState(false)
 
   const checkGstin = async () => {
@@ -59,7 +59,7 @@ export default function ScanReceipt() {
         gst_amount: x.gst_amount ?? '',
         total_amount: x.total_amount ?? '',
         payment_mode: (x.payment_mode || '').toUpperCase(),
-        ledger_category: res.ledger?.category ?? '',
+        ledger_category: res.ledger?.category ?? '', hsn_code: x.hsn_code ?? '',
       })
       toast('Receipt scanned — review fields before saving.', 'success')
     } catch (err) {
@@ -169,6 +169,23 @@ function ScanReview({ preview, form, setForm, onSave, saving }) {
   const ocr = preview.ocr || {}
   const ledger = preview.ledger
   const anomaly = preview.anomaly
+
+  const [gstinStatus, setGstinStatus] = useState(null)
+  const [verifying, setVerifying] = useState(false)
+
+  const checkGstin = async () => {
+    if (!form.vendor_gstin) return
+    setVerifying(true)
+    try {
+      const res = await api.verifyGstin(form.vendor_gstin)
+      setGstinStatus(res)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setVerifying(false)
+    }
+  }
+  
 
   return (
     <div className="space-y-4">
